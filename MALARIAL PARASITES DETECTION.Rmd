@@ -1,0 +1,281 @@
+---
+#title: "MALARIAL PARASITES DETECTION AND CLEARANCE RATES – BAYESIAN HIERARCHICAL REGRESSION MODELLING"
+#author: "Olufemi Babalola"
+#date: "3/2/2020"
+
+
+#This program showcases the use of the bhrcr package which performs Bayesian hierarchical regression to estimate malarial parasite clearance rates.
+
+
+#Resistance to anti-malarial drugs has led malaria researchers to investigate what covariates are associated with resistance. We will investigate how covariates impact malaria using the recently developed Bayesian Clearance Estimator which leads to more accurate results for hierarchial regression modelling.
+
+
+#The R package developed for this purpose is “bhrcr” that performs Bayesian hierarchical regression to estimate malaria parasite clearance rates along with the effect of covariates on them in the presence of “lag” and “tail” phases. All posterior inferences are obtained by a “Markov Chain Monte Carlo” based sampling scheme which forms the core of the package.
+
+
+#Markov chain Monte Carlo (MCMC) algorithms generate a Markov chain of samples, each of which will be correlated with nearby samples. Thus, if uncorrelated samples are required for inference, one can thin the resulting chain (after the burn-in period) by only taking every n-th value,which is called “thinning”.
+
+install.packages("bhchr") # R package cotaining pursat data
+
+library(bhrcr) #The main function of the bhrcr package is clearanceEstimatorBayes,a function that returns the WWARN(WorldWide Antimalarial Resistance Network) PCE estimates as well as the estimates from the Bayesian hierarchical model
+
+library(kohonen)
+
+
+data(pursat) #The Pursat data consists of Plasmodium falciparum clearance profiles of 110 patients, along with individual level covariates, measured in 2009 and 2010 in Pursat province of Western Cambodia. Parasite densities were measured every 6 hours. The parasites were divided into two genetically diferent groups, labeled group 1 and group 2. All 110 individuals were observed until no parasites were detected in their blood.
+
+View(pursat) # display the pursat dataset
+
+dim(pursat)
+str(pursat)
+
+summary(pursat) #There are no missing data
+set.seed(123) #an optional user-specifed number used to initialize a pseudorandom number generator, with a default value of 1234.The seed argument helps users to reproduce their results.
+
+data("posterior")
+plot(posterior)
+
+data(pursat_covariates) #covariates:a data frame (with no missing values), ordered according to patients’ order in data,containing individual level covariates.Including covariates in analysis can increase statistical power and improve precision of the treatment effect 
+
+View(pursat_covariates) # display the pursat_covariates dataset
+
+#The clearanceEstimatorBayes Function#
+#The clearanceEstimatorBayes function is the principal function in the bhrcr package that analyzes the input data set in the Bayesian framework
+
+
+results <- clearanceEstimatorBayes(data = pursat,covariates = pursat_covariates,detect.limit = 15, burnin=50, niteration=100, thin=10) 
+#We want to test the hypothesis that red blood cell polymorphisms—including Haemoglobin E (HbE), thalassaemia (athal), and G6PD defciency (g6pd)—may act to strengthen the pro-oxidant activity of parasite defenses against artemisinins, hence resulting in lower clearance rates.
+
+
+summary(results) #Get a summary of the results
+
+#Explaining the arguments of the clearanceEstimatorBayes#
+#data is allowed to have the predicted WWARN PCE estimates stored in another column named Predicted. 
+
+#detect.limit: detection limit of the parasite density in blood (parasites per microlitre). The default value is 40.
+
+#burnin: length of the burn-in period. The default value is 500.
+
+#niteration: total number of simulations after the burn-in period, with a default value of 100,000.
+
+#thin: step size of the thinning process. The default value is 50.
+
+
+#The summary function,allows us to perform an analysis of the covariates of interest. One point of interest was whether or not there is evidence of resistance to artemisinins developing over time. Thus the indicator variable year2010TRUE for the year of data collection was included. According to the results produced, the parasite clearance half-life increased over time (positive mean and median) however this efect is not signifcant since its 95% credible interval contains zero.
+
+diagnostics(results)
+plot(results)
+***From the results of the summary none of these factors has a signifcant positive impact on log halflives since the 95% credible intervals all contain 0.We therefore reject our earlier hypothesis that red blood cell polymorphisms—including Haemoglobin E (HbE), thalassaemia (athal), and G6PD defciency (g6pd)—may act to strengthen the pro-oxidant activity of parasite defenses against artemisinins, hence resulting in lower clearance rates.***
+
+#outlier.detect: indicator of whether or not to use the WWARN PCE outlier detection method .The default value is TRUE and it is recommended to set outlier.detect = TRUE if data is missing the Predicted column.
+
+#conf.level: required confdence level for reporting estimates’ credible intervals, with a default value of 0.95.
+
+
+# We can calculate the posterior mean, median, and 95% credible interval of each individual's clearance rate
+
+id <- c(2, 4, 15, 33)
+a <- .025
+
+results$clearance.mean[id]
+results$clearance.median[id]
+
+#Create the SOM Model
+       
+pursat<-scale(pursat)
+smp_siz = floor(0.75*nrow(pursat))
+smp_siz 
+
+
+train_ind = sample(seq_len(nrow(pursat)),size = smp_siz)  # Randomly identifies the rows equal to sample size from  all the rows of pursat dataset and stores the row number in train_ind
+
+View(train_ind)
+
+train = pursat[train_ind,] #creates the training dataset with row numbers stored in train_ind
+View(train)
+
+test= pursat[-train_ind,]  #creates the test dataset excluding the row numbers mentioned in train_ind
+View(test)
+
+set.seed(123)
+# Create the SOM Grid - you generally have to specify the size of the training grid prior to training the SOM.
+
+som_grid <- somgrid(xdim = 20, ydim=20, topo="hexagonal")
+#Finally, train the SOM, options for the number of iterations,
+
+#The learning rates, and the neighbourhood are available
+
+set.seed(123)
+
+som_model <- som(train, 
+    grid=som_grid, 
+    rlen=500, 
+    alpha=c(0.05,0.01), 
+        keep.data = TRUE )
+
+#Visualisation
+
+#Training progress for SOM
+
+set.seed(123)
+
+X11()
+plot(som_model, type="changes")
+#Node count plot
+#The Kohonen packages allows us to visualise the count of how many samples are mapped to each node on the map
+
+set.seed(123)
+
+X11()
+plot(som_model, type="count", main="Node Counts")
+
+#Neighbour Distance
+
+#Often referred to as the “U-Matrix”, this visualisation is of the distance between each node and its neighbours.The U-Matrix can be used to identify clusters within the SOM map.
+
+#U-matrix visualisation
+
+set.seed(123)
+
+X11()
+plot(som_model, type="dist.neighbours", main = "SOM neighbour distances")
+
+#Codes / Weight vectors
+
+#The node weight vectors, or “codes”, are made up of normalised values of the original variables used to generate the SOM. Each node’s weight vector is representative / similar of the samples mapped to that node. By visualising the weight vectors across the map, we can see patterns in the distribution of samples and variables. 
+
+#Weight Vector View
+
+set.seed(123)
+X11()
+plot(som_model, type="codes")
+
+#Heatmaps
+
+#Kohonen Heatmap creation
+
+set.seed(123)
+X11()
+
+plot(som_model, type = "property", property = getCodes(som_model)[,3], main=colnames(getCodes(som_model))[3], palette(rainbow(6)))
+
+#Clustering and Segmentation on top of Self-Organising Map
+
+#Clustering can be performed on the SOM nodes to isolate groups of samples with similar metrics.The results of the clustering can be visualised using the SOM plot function again.
+
+#Viewing WCSS for kmeans
+
+set.seed(123)
+mydata <- som_model$codes 
+mydata <- som_model$codes[[1]]
+
+wss <- (nrow(mydata)-1)*sum(apply(mydata,2,var)) 
+for (i in 1:3) {
+  wss[i] <- sum(kmeans(mydata, centers=i)$withinss)
+}
+
+
+X11()
+plot(wss)
+
+#An estimate of the number of clusters that would be suitable can be ascertained using a kmeans algorithm and examing for an “elbow-point” in the plot of “within cluster sum of squares”. In this case the estimate is 2 clusters.
+
+#Visualising cluster results
+
+#Use hierarchical clustering to cluster the codebook vectors
+
+set.seed(123)
+som_cluster <- cutree(hclust(dist(som_model$codes[[1]])), 2)
+
+#Plot these results:
+  
+X11()
+plot(som_model, type="mapping", bgcol = terrain.colors(5)[som_cluster], main = "Clusters") 
+
+add.cluster.boundaries(som_model, som_cluster)
+
+#In general, the SOM has organized these data into well-defined clusters
+
+#Create hierarchical clustering model: hclust.out
+
+pursat.scale<-scale(pursat)
+hclust.out <- hclust(dist(pursat.scale))
+
+#Inspect the result
+
+summary(hclust.out)
+X11()
+plot(hclust.out)
+
+#Cluster using complete linkage: hclust.complete
+hclust.complete <- hclust(dist(pursat.scale), method = "complete")
+
+#Plot dendrogram of hclust.complete
+X11()
+plot(hclust.complete, main = "Complete")
+abline(h = 7, col = "red")
+
+#Cluster using average linkage: hclust.average
+hclust.average <- hclust(dist(pursat.scale), method = "average")
+
+#Plot dendrogram of hclust.average
+X11()
+plot(hclust.average, main = "Average")
+
+#Cluster using single linkage: hclust.single
+hclust.single <- hclust(dist(pursat.scale), method = "single")
+X11()
+plot(hclust.average, main = "single")
+
+#Apply cutree() to pursat.scale: cut.pursat
+cut.pursat <- cutree(hclust.out, k =3)
+
+#Create the k-means model: km.out
+km.out <- kmeans(pursat, centers = 3, nstart = 20)
+
+#Inspect the result
+summary(km.out)
+# Initialize total within sum of squares error: wss
+wss <- 0
+
+#Look over 1 to 15 possible clusters
+for (i in 1:3) {
+  #Fit the model: km.out
+  km.out <- kmeans(pursat, centers = i, nstart = 20, iter.max = 50)
+  #Save the within cluster sum of squares
+  wss[i] <- km.out$tot.withinss
+}
+
+#Produce a screen plot
+X11()
+plot(1:3, wss, type = "b", 
+     xlab = "Number of Clusters", 
+     ylab = "Within groups sum of squares")
+     
+#Print the cluster membership component of the model
+km.out$cluster   
+
+#Print the km.out object
+km.out  
+
+  #Visualizing and interpreting results of kmeans()
+# Scatter plot of pursat
+X11()
+plot(pursat, 
+  col = km.out$cluster,
+  main = "k-means with 3 clusters")
+  
+
+# Set k equal to the number of clusters corressponding to the elbow location
+
+k <- 2
+# Build model with k clusters: km.out
+km.pursat<- kmeans(pursat, centers = k, nstart = 20, iter.max = 50)
+
+# View the resulting model
+km.pursat
+
+# Compare methods
+table(km.pursat$cluster,cut.pursat)
+
+#The scaled hierarchical cluster pretty much puts all observations in cluster 1.
